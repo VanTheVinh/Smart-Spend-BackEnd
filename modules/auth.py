@@ -7,6 +7,7 @@ from modules.db import connect_db
 auth_bp = Blueprint('auth', __name__)
 # CORS(auth_bp)
 
+# Đăng ký
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -39,7 +40,7 @@ def register():
 
     return jsonify({"message": "Đăng ký thành công"}), 201
 
-
+# Đăng nhập
 @auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -77,6 +78,7 @@ def login():
     else:
         return jsonify({"message": "Người dùng không tồn tại"}), 404
 
+# Đăng ký
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
     session.pop('user_id', None)
