@@ -5,7 +5,8 @@ from config import Config
 from modules.auth import auth_bp  
 from modules.bill import bill_bp  
 from modules.category import category_bp  
-from modules.sarsa import sarsa_bp
+# from modules.sarsa import sarsa_bp
+from modules.sarsaTest import sarsa_test_bp
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
@@ -17,7 +18,8 @@ CORS(app)
 app.register_blueprint(auth_bp)
 app.register_blueprint(bill_bp) 
 app.register_blueprint(category_bp) 
-app.register_blueprint(sarsa_bp) 
+# app.register_blueprint(sarsa_bp) 
+app.register_blueprint(sarsa_test_bp) 
 
 if __name__ == '__main__':
     app.run(debug=True)
