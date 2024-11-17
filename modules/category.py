@@ -60,6 +60,13 @@ def add_category():
         except ValueError:
             return jsonify({"message": "amount không hợp lệ"}), 400
 
+    # Kiểm tra và chuyển đổi time_frame sang định dạng yyyy-mm-dd
+    try:
+        # Chuyển time_frame từ dd-mm-yyyy sang yyyy-mm-dd
+        time_frame = datetime.strptime(time_frame, "%d-%m-%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return jsonify({"message": "time_frame phải có định dạng dd-mm-yyyy"}), 400
+
     conn = connect_db()
     cur = conn.cursor()
 
@@ -99,7 +106,7 @@ def add_category():
 
     return jsonify({"message": "Thêm danh mục thành công"}), 201
 
-
+# Cập nhật category
 @category_bp.route("/update-category/<int:category_id>", methods=["PUT"])
 def update_category(category_id):
     data = request.get_json()
@@ -151,6 +158,14 @@ def update_category(category_id):
                 return jsonify({"message": "actual_amount không thể âm"}), 400
         except ValueError:
             return jsonify({"message": "actual_amount không hợp lệ"}), 400
+
+
+    # Kiểm tra và chuyển đổi time_frame sang định dạng yyyy-mm-dd
+    try:
+        # Chuyển time_frame từ dd-mm-yyyy sang yyyy-mm-dd
+        time_frame = datetime.strptime(time_frame, "%d-%m-%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return jsonify({"message": "time_frame phải có định dạng dd-mm-yyyy"}), 400
 
     conn = connect_db()
     cur = conn.cursor()
@@ -219,13 +234,12 @@ def update_category(category_id):
 # Route để lấy danh mục, sắp xếp theo actual_amount
 @category_bp.route("/get-categories", methods=["GET"])
 def get_categories():
+    category_id = request.args.get("id")
     user_id = request.args.get("user_id")
     category_type = request.args.get("category_type")
     time_frame = request.args.get("time_frame")
     is_exceeded = request.args.get("is_exceeded")
-    sort_category = request.args.get(
-        "sort_category", "DESC"
-    ).upper()  # Mặc định là DESC
+    sort_category = request.args.get("sort_category", "DESC").upper()  # Mặc định là DESC
 
     if not user_id:
         return jsonify({"message": "Thiếu thông tin user_id"}), 400
@@ -248,21 +262,17 @@ def get_categories():
     query = 'SELECT * FROM "CATEGORY" WHERE user_id = %s'
     params = [user_id]
 
+    if category_id:
+        query += " AND id = %s"
+        params.append(category_id)
+
     if category_type:
         query += " AND category_type = %s"
         params.append(category_type)
 
     if time_frame:
-        try:
-            # Chuyển đổi time_frame từ định dạng "MM/YYYY" thành "YYYY-MM"
-            month, year = map(int, time_frame.split('/'))
-            start_date = f"{year}-{month:02d}-01"
-            end_of_month = get_end_of_month(year, month)
-            end_date = end_of_month.strftime('%Y-%m-%d')  # Ngày cuối cùng của tháng
-            query += " AND time_frame BETWEEN %s AND %s"
-            params.extend([start_date, end_date])
-        except ValueError:
-            return jsonify({"message": "time_frame không hợp lệ, định dạng phải là MM/YYYY"}), 400
+        query += " AND time_frame = %s"
+        params.append(time_frame)
 
     if is_exceeded is not None:
         query += " AND is_exceeded = %s"
@@ -286,7 +296,7 @@ def get_categories():
                 "amount": row[4],
                 "actual_amount": row[5],
                 "is_exceeded": row[6],
-                "time_frame": row[7],
+                "time_frame": row[7].strftime("%d-%m-%Y"),
                 "user_id": row[8],
             }
             for row in categories
@@ -298,6 +308,8 @@ def get_categories():
         cur.close()
         conn.close()
         return jsonify({"message": f"Lỗi khi lấy danh mục: {str(e)}"}), 500
+
+
 
 
 # Route để xóa danh mục

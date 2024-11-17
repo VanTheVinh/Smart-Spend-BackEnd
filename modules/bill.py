@@ -136,12 +136,12 @@ def manual_entry():
             'INSERT INTO "BILL" (type, source, amount, date, description, user_id, category_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
             (bill_type, source, amount, date.strftime("%Y-%m-%d"), description, user_id, category_id),
         )
-
+ 
         # Cập nhật actual_amount và time_frame sau khi thêm bill
-        cur.execute(
-            'UPDATE "CATEGORY" SET actual_amount = (SELECT SUM(amount) FROM "BILL" WHERE category_id = %s), time_frame = %s WHERE id = %s',
-            (category_id, date.strftime("%Y-%m-%d"), category_id)
-        )
+        # cur.execute(
+        #     'UPDATE "CATEGORY" SET actual_amount = (SELECT SUM(amount) FROM "BILL" WHERE category_id = %s), time_frame = %s WHERE id = %s',
+        #     (category_id, date.strftime("%Y-%m-%d"), category_id)
+        # )
 
         conn.commit()
     except Exception as e:
@@ -291,7 +291,7 @@ def update_bill(bill_id):
     if date:
         try:
             # Giả sử bạn sử dụng định dạng YYYY-MM-DD
-            datetime.strptime(date, "%d-%m-%Y")
+            datetime.strptime(date, "%Y-%m-%d")
         except ValueError:
             cur.close()
             conn.close()
@@ -332,19 +332,19 @@ def update_bill(bill_id):
         cur.execute(query, params)
         conn.commit()
 
-        # Kiểm tra nếu trường amount có thay đổi
-        if amount and float(amount) != float(existing_bill[3]):
-            # Cập nhật actual_amount và time_frame cùng một lúc
-            cur.execute(
-                '''
-                UPDATE "CATEGORY" 
-                SET actual_amount = actual_amount + %s, 
-                    time_frame = %s 
-                WHERE id = %s
-                ''',
-                (float(amount) - float(existing_bill[3]), date, category_id)
-            )
-        conn.commit()
+        # # Kiểm tra nếu trường amount có thay đổi
+        # if amount and float(amount) != float(existing_bill[3]):
+        #     # Cập nhật actual_amount và time_frame cùng một lúc
+        #     cur.execute(
+        #         '''
+        #         UPDATE "CATEGORY" 
+        #         SET actual_amount = actual_amount + %s, 
+        #             time_frame = %s 
+        #         WHERE id = %s
+        #         ''',
+        #         (float(amount) - float(existing_bill[3]), date, category_id)
+        #     )
+        # conn.commit()
 
         if cur.rowcount == 0:
             cur.close()
@@ -399,11 +399,11 @@ def delete_bill(id=None):
             conn.commit()
 
             # Cập nhật lại actual_amount trong bảng CATEGORY
-            cur.execute(
-                'UPDATE "CATEGORY" SET actual_amount = actual_amount - %s WHERE id = %s',
-                (amount, category_id)
-            )
-            conn.commit()
+            # cur.execute(
+            #     'UPDATE "CATEGORY" SET actual_amount = actual_amount - %s WHERE id = %s',
+            #     (amount, category_id)
+            # )
+            # conn.commit()
 
         cur.close()
         conn.close()
