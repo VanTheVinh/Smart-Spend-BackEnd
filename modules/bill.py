@@ -3,6 +3,7 @@ from datetime import datetime
 from modules.db import connect_db
 import pandas as pd
 import os
+from psycopg2.extras import RealDictCursor
 
 bill_bp = Blueprint("bill", __name__)
 
@@ -161,8 +162,8 @@ def add_bill():
 @bill_bp.route("/get-bills", methods=["GET"])
 def get_bills():
     # Lấy tham số từ query string
-    bill_id = request.args.get("id")
-    bill_type = request.args.get("type")
+    id = request.args.get("id")
+    type = request.args.get("type")
     source = request.args.get("source")
     date = request.args.get("date")
     user_id = request.args.get("user_id")
@@ -181,12 +182,12 @@ def get_bills():
     params = []
 
     # Thêm các điều kiện vào câu truy vấn
-    if bill_id:
+    if id:
         query += " AND id = %s"
-        params.append(bill_id)
-    if bill_type:
+        params.append(id)
+    if type:
         query += " AND type = %s"
-        params.append(bill_type)
+        params.append(type)
     if source:
         query += " AND source = %s"
         params.append(source)
@@ -249,7 +250,6 @@ def get_bills():
                 }
             )
 
-
         cur.close()
         conn.close()
 
@@ -267,18 +267,17 @@ def update_bill(bill_id):
     data = request.get_json()
 
     # Lấy ra các trường cần cập nhật
-    bill_type = data.get("type")
+    type = data.get("type")
     source = data.get("source")
-    amount = data.get("amount")
+    amount = data.get("amount", "")
     date = data.get("date")
-    description = data.get("description")
+    description = data.get("description", "")
     category_id = data.get("category_id")
-
-    if not any([bill_type, source, amount, date, description, category_id]):
-        return jsonify({"message": "Không có thông tin để cập nhật"}), 400
+    user_id = data.get("user_id")
+    group_id = data.get("group_id", "")
 
     conn = connect_db()
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=RealDictCursor)  
 
     # Kiểm tra xem hóa đơn có tồn tại hay không
     cur.execute('SELECT * FROM "BILL" WHERE id = %s', (bill_id,))
@@ -288,41 +287,80 @@ def update_bill(bill_id):
         conn.close()
         return jsonify({"message": "Hóa đơn không tồn tại"}), 404
 
-    # Kiểm tra tính hợp lệ của dữ liệu
+    # Kiểm tra xem danh mục có tồn tại hay không
+    cur.execute('SELECT * FROM "CATEGORY" WHERE id = %s', (category_id,))
+    existing_category = cur.fetchone()
+    if not existing_category:
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Danh mục không tồn tại"}), 404
+
+    # Kiểm tra xem user có tồn tại hay không
+    cur.execute('SELECT * FROM "USER" WHERE id = %s', (user_id,))
+    existing_user = cur.fetchone()
+    if not existing_user:
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Người dùng không tồn tại"}), 404
+
+    # Kiểm tra tính hợp lệ của dữ liệu ngày tháng
     if date:
         try:
-            # Giả sử bạn sử dụng định dạng YYYY-MM-DD
-            datetime.strptime(date, "%Y-%m-%d")
+            datetime.strptime(date, "%d-%m-%Y")
         except ValueError:
             cur.close()
             conn.close()
             return (
-                jsonify({"message": "Ngày không hợp lệ, định dạng đúng là YYYY-MM-DD"}),
+                jsonify({"message": "Ngày không hợp lệ, định dạng đúng là DD-MM-YYYY"}),
                 400,
             )
 
     # Xây dựng câu lệnh SQL động để cập nhật các trường được cung cấp
     query = 'UPDATE "BILL" SET'
     params = []
+    updated_fields = False
 
-    if bill_type:
+    # Kiểm tra các trường và chỉ cập nhật nếu có sự thay đổi
+    if type and type != existing_bill['type']:  
         query += " type = %s,"
-        params.append(bill_type)
-    if source:
+        params.append(type)
+        updated_fields = True
+
+    if source and source != existing_bill['source']:  
         query += " source = %s,"
         params.append(source)
-    if amount:
+        updated_fields = True
+
+    if amount and amount != existing_bill['amount']:  
         query += " amount = %s,"
         params.append(amount)
-    if date:
+        updated_fields = True
+
+    if date and date != existing_bill['date']:  
         query += " date = %s,"
         params.append(date)
-    if description:
+        updated_fields = True
+
+    if description and description != existing_bill['description']:  
         query += " description = %s,"
         params.append(description)
-    if category_id:
+        updated_fields = True
+
+    if category_id and category_id != existing_bill['category_id']:  
         query += " category_id = %s,"
         params.append(category_id)
+        updated_fields = True
+
+    if group_id and group_id != existing_bill['group_id']:  
+        query += " group_id = %s,"
+        params.append(group_id)
+        updated_fields = True
+
+    # Nếu không có trường nào thay đổi, trả về thông báo
+    if not updated_fields:
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Không có thay đổi nào để cập nhật"}), 200
 
     # Loại bỏ dấu phẩy cuối cùng và thêm điều kiện WHERE
     query = query.rstrip(",") + " WHERE id = %s"
@@ -332,20 +370,6 @@ def update_bill(bill_id):
         # Thực thi câu lệnh SQL
         cur.execute(query, params)
         conn.commit()
-
-        # # Kiểm tra nếu trường amount có thay đổi
-        # if amount and float(amount) != float(existing_bill[3]):
-        #     # Cập nhật actual_amount và time_frame cùng một lúc
-        #     cur.execute(
-        #         '''
-        #         UPDATE "CATEGORY" 
-        #         SET actual_amount = actual_amount + %s, 
-        #             time_frame = %s 
-        #         WHERE id = %s
-        #         ''',
-        #         (float(amount) - float(existing_bill[3]), date, category_id)
-        #     )
-        # conn.commit()
 
         if cur.rowcount == 0:
             cur.close()
