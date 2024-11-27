@@ -70,78 +70,79 @@ def upload_invoice():
 
 
 # Route để nhập hóa đơn thủ công
-@bill_bp.route("/manual-bill", methods=["POST"])
-def manual_entry():
+@bill_bp.route("/add-bill", methods=["POST"])
+def add_bill():
     data = request.get_json()
-
-    # Kiểm tra các trường bắt buộc
-    required_fields = ["type", "source", "amount", "date", "user_id", "category_id", "description"]
-    if not all(field in data and data[field] for field in required_fields):
-        return jsonify({"message": "Thiếu thông tin bắt buộc"}), 400
-
-    # Kiểm tra giá trị của type
-    bill_type = data.get("type")
-    if bill_type not in ["CHI", "THU"]:
-        return jsonify({"message": "Giá trị của 'type' phải là 'CHI' hoặc 'THU'"}), 400
-
-    # Kiểm tra giá trị của source
-    source = data.get("source")
-    if source not in ["TIỀN MẶT", "CHUYỂN KHOẢN"]:
-        return jsonify({"message": "Giá trị của 'source' phải là 'TIỀN MẶT' hoặc 'CHUYỂN KHOẢN'"}), 400
-
-    # Kiểm tra định dạng ngày
-    try:
-        date = datetime.strptime(data.get("date"), "%d-%m-%Y")
-    except ValueError:
-        return jsonify({"message": "Ngày không hợp lệ, phải có định dạng DD-MM-YYYY"}), 400
-
-    # Kiểm tra số tiền
-    try:
-        amount = float(data.get("amount"))
-        if amount < 0:
-            return jsonify({"message": "Số tiền không thể âm"}), 400
-    except ValueError:
-        return jsonify({"message": "Số tiền không hợp lệ"}), 400
-    
-    # Kiểm tra category_id là số nguyên dương
+    type = data.get("type") 
+    source = data.get("source", "")
+    amount = data.get("amount")
+    if amount:
+        amount = float(amount)
+    description = data.get("description", "")
     category_id = data.get("category_id")
-    if not isinstance(category_id, int) or category_id <= 0:
-        return jsonify({"message": "Category ID phải là số nguyên dương"}), 400
-
-    # Kiểm tra user_id là số nguyên dương
     user_id = data.get("user_id")
-    if not isinstance(user_id, int) or user_id <= 0:
-        return jsonify({"message": "User ID phải là số nguyên dương"}), 400
     
-    # Kiểm tra description không được rỗng
-    description = data.get("description")
-    if not isinstance(description, str) or not description.strip():
-        return jsonify({"message": "Description không được rỗng"}), 400
-
-    # Xử lý dữ liệu
+    # Kết nối CSDL
     conn = connect_db()
     cur = conn.cursor()
 
     try:
-        # Kiểm tra xem category_id có tồn tại trong bảng CATEGORY không
+        # Kiểm tra dữ liệu JSON có hợp lệ không
+        if not data or not isinstance(data, dict):
+            return jsonify({"message": "Dữ liệu không hợp lệ hoặc không phải JSON"}), 400
+        
+        # Kiểm tra các trường bắt buộc
+        required_fields = ["type", "amount", "date", "user_id", "category_id"]
+        missing_fields = [field for field in required_fields if field not in data or data[field] is None]
+        if missing_fields:
+            cur.close()
+            conn.close()
+            return jsonify({"message": f"Thiếu thông tin các trường {', '.join(missing_fields)}"}), 400
+
+        # Kiểm tra giá trị của type
+        if type:
+            if type not in ["CHI", "THU"]:
+                return jsonify({"message": "Giá trị của 'type' phải là 'CHI' hoặc 'THU'"}), 400
+
+        # Kiểm tra giá trị của source
+        if source:
+            if source not in ["TIỀN MẶT", "CHUYỂN KHOẢN"]:
+                return jsonify({"message": "Giá trị của 'source' phải là 'TIỀN MẶT' hoặc 'CHUYỂN KHOẢN'"}), 400
+
+        # Kiểm tra định dạng ngày
+        try:
+            date = datetime.strptime(data.get("date"), "%d-%m-%Y")
+        except ValueError:
+            return jsonify({"message": "Ngày không hợp lệ, phải có định dạng DD-MM-YYYY"}), 400
+
+        # Kiểm tra số tiền
+        try:
+            if amount < 0:
+                return jsonify({"message": "Số tiền không thể âm"}), 400
+        except ValueError:
+            return jsonify({"message": "Số tiền không hợp lệ"}), 400
+
+        # Kiểm tra Category
         cur.execute('SELECT * FROM "CATEGORY" WHERE id = %s', (category_id,))
         category_exists = cur.fetchone()
         if not category_exists:
             cur.close()
             conn.close()
             return jsonify({"message": "Category_id không tồn tại"}), 400
+        
+        # Kiểm tra User
+        cur.execute('SELECT * FROM "USER" WHERE id = %s', (user_id,))
+        user_exists = cur.fetchone()
+        if not user_exists:
+            cur.close()
+            conn.close()
+            return jsonify({"message": "User_id không tồn tại"}), 400
 
         # Chèn dữ liệu vào database
         cur.execute(
             'INSERT INTO "BILL" (type, source, amount, date, description, user_id, category_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
-            (bill_type, source, amount, date.strftime("%Y-%m-%d"), description, user_id, category_id),
+            (type, source, amount, date.strftime("%Y-%m-%d"), description, user_id, category_id),
         )
- 
-        # Cập nhật actual_amount và time_frame sau khi thêm bill
-        # cur.execute(
-        #     'UPDATE "CATEGORY" SET actual_amount = (SELECT SUM(amount) FROM "BILL" WHERE category_id = %s), time_frame = %s WHERE id = %s',
-        #     (category_id, date.strftime("%Y-%m-%d"), category_id)
-        # )
 
         conn.commit()
     except Exception as e:
