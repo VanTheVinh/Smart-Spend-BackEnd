@@ -50,8 +50,14 @@ def register():
     fullname = data.get('fullname')
     avatar = data.get('avatar')  # Tùy chọn, có thể không có
 
-    if not username or not password:
-        return jsonify({"message": "Thiếu tên người dùng hoặc mật khẩu"}), 400
+    if not username:
+        return jsonify({"message": "Thiếu tên người dùng"}), 400
+    if not password:
+        return jsonify({"message": "Thiếu mật khẩu"}), 400
+    if not fullname:
+        return jsonify({"message": "Thiếu tên đầy đủ"}), 400
+    if not username and not password:
+        return jsonify({"message": "Thiếu tên người dùng và mật khẩu"}), 400
 
     conn = connect_db()
     cur = conn.cursor()
@@ -81,8 +87,12 @@ def login():
     username = data.get('username')
     password = data.get('password')
 
-    if not username or not password:
-        return jsonify({"message": "Thiếu tên người dùng hoặc mật khẩu"}), 400
+    if not username:
+        return jsonify({"message": "Thiếu tên người dùng"}), 400
+    if not password:
+        return jsonify({"message": "Thiếu mật khẩu"}), 400
+    if not username and not password:
+        return jsonify({"message": "Thiếu tên người dùng và mật khẩu"}), 400
 
     conn = connect_db()
     cur = conn.cursor()

@@ -1,6 +1,9 @@
 from flask import Blueprint, request, jsonify
 from modules.db import connect_db
 from datetime import datetime, timedelta
+import psycopg2.extras
+import requests
+
 
 category_bp = Blueprint("category", __name__)
 
@@ -83,18 +86,19 @@ def add_category():
             return jsonify({"message": "Danh mục đã tồn tại cho người dùng này"}), 400
 
         # Chèn dữ liệu vào bảng CATEGORY
-        cur.execute(
-            'INSERT INTO "CATEGORY" (category_type, category_name, percentage_limit, amount, time_frame, user_id) VALUES (%s, %s, %s, %s, %s, %s)',
-            (
-                category_type,
-                category_name,
-                percentage_limit,
-                amount,
-                time_frame,
-                user_id,
-            ),
-        )
-        conn.commit()
+        else:
+            cur.execute(
+                'INSERT INTO "CATEGORY" (category_type, category_name, percentage_limit, amount, time_frame, user_id) VALUES (%s, %s, %s, %s, %s, %s)',
+                (
+                    category_type,
+                    category_name,
+                    percentage_limit,
+                    amount,
+                    time_frame,
+                    user_id,
+                ),  
+            )
+            conn.commit()
     except Exception as e:
         conn.rollback()
         cur.close()
@@ -234,6 +238,7 @@ def update_category(category_id):
 # Route để lấy danh mục, sắp xếp theo actual_amount
 @category_bp.route("/get-categories", methods=["GET"])
 def get_categories():
+
     category_id = request.args.get("id")
     user_id = request.args.get("user_id")
     category_type = request.args.get("category_type")
@@ -257,6 +262,7 @@ def get_categories():
 
     conn = connect_db()
     cur = conn.cursor()
+    # cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)  # Sử dụng RealDictCursor
 
     # Tạo câu truy vấn động
     query = 'SELECT * FROM "CATEGORY" WHERE user_id = %s'
@@ -283,6 +289,44 @@ def get_categories():
     try:
         cur.execute(query, params)
         categories = cur.fetchall()
+
+        # # Tìm các danh mục có `category_type=CHI` và kiểm tra `actual_amount`
+        # for row in categories:
+        #     if row[1] == "CHI":  # Giả sử `category_type` là phần tử thứ 3 trong tuple
+        #         user_id = row[8]  # Giả sử `user_id` là phần tử thứ 1
+        #         category_id = row[0]  # Giả sử `id` là phần tử thứ 2
+        #         new_actual_amount = row[5]  # Giả sử `actual_amount` là phần tử thứ 4
+
+        #         # Lấy actual_amount trước đó từ cơ sở dữ liệu
+        #         cur.execute(
+        #             'SELECT actual_amount FROM "CATEGORY" WHERE id = %s', [category_id]
+        #         )
+
+        #         # Lấy kết quả của truy vấn
+        #         previous_row = cur.fetchone()
+                
+        #         # Kiểm tra nếu không có kết quả
+        #         if not previous_row:
+        #             print(f"Không tìm thấy danh mục với id = {category_id}.")
+        #             continue
+
+        #         # Lấy giá trị actual_amount từ kết quả (ở vị trí đầu tiên của tuple)
+        #         previous_actual_amount = previous_row[0]
+
+        #         # So sánh actual_amount
+        #         if new_actual_amount != previous_actual_amount:
+        #             # Gửi thông báo qua HTTP POST
+        #             url = f"http://127.0.0.1:5000/post-alert?user_id={user_id}&category_id={category_id}"
+        #             try:
+        #                 response = requests.post(url)
+        #                 if response.status_code == 200:
+        #                     print(f"Thông báo đã được gửi thành công cho danh mục {category_id}.")
+        #                 else:
+        #                     print(f"Lỗi khi gửi thông báo: {response.status_code} - {response.text}")
+        #             except Exception as e:
+        #                 print(f"Lỗi khi gửi yêu cầu HTTP: {e}")
+
+
         cur.close()
         conn.close()
 
@@ -305,9 +349,11 @@ def get_categories():
         return jsonify(categories_list), 200
 
     except Exception as e:
+        print(f"Error: {str(e)}")
         cur.close()
         conn.close()
         return jsonify({"message": f"Lỗi khi lấy danh mục: {str(e)}"}), 500
+
 
 
 
