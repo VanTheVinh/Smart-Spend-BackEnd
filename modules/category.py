@@ -27,8 +27,8 @@ def add_category():
     # Lấy ra các trường cần thiết
     category_type = data.get("category_type")
     category_name = data.get("category_name")
-    percentage_limit = data.get("percentage_limit")
-    amount = data.get("amount")
+    percentage_limit = data.get("percentage_limit", 0)
+    amount = data.get("amount", 0)
     time_frame = data.get("time_frame")
     user_id = data.get("user_id")
 
@@ -174,6 +174,39 @@ def update_category(category_id):
     conn = connect_db()
     cur = conn.cursor()
 
+
+    # Nếu percentage_limit được cung cấp, tính toán lại amount
+    # if percentage_limit is not None:
+    #     try:
+    #         # Lấy user_id từ danh mục hiện tại
+    #         cur.execute('SELECT user_id FROM "CATEGORY" WHERE id = %s', [category_id])
+    #         user_result = cur.fetchone()
+    #         if not user_result:
+    #             cur.close()
+    #             conn.close()
+    #             return jsonify({"message": "Danh mục không tồn tại"}), 404
+
+    #         user_id = user_result[0]
+
+    #         # Lấy budget từ bảng USER
+    #         cur.execute('SELECT budget FROM "USER" WHERE id = %s', [user_id])
+    #         budget_result = cur.fetchone()
+    #         if not budget_result or budget_result[0] is None:
+    #             cur.close()
+    #             conn.close()
+    #             return jsonify({"message": "Người dùng chưa thiết lập ngân sách"}), 400
+
+    #         budget = float(budget_result[0])
+
+    #         # Tính toán amount mới
+
+    #         amount = (percentage_limit / 100) * budget
+    #     except Exception as e:
+    #         cur.close()
+    #         conn.close()
+    #         return jsonify({"message": f"Lỗi khi tính toán amount: {str(e)}"}), 500
+        
+
     # Xây dựng câu lệnh SQL động để cập nhật các trường được cung cấp
     query = 'UPDATE "CATEGORY" SET'
     params = []
@@ -211,16 +244,16 @@ def update_category(category_id):
             conn.close()
             return jsonify({"message": "Danh mục không tồn tại"}), 404
         
-        # Kiểm tra nếu actual_amount > amount sẽ cập nhật is_exceeded thành true
-        update_is_exceeded_query = """
-        UPDATE "CATEGORY" 
-        SET is_exceeded = CASE 
-            WHEN actual_amount > amount THEN true
-            ELSE false
-        END
-        WHERE id = %s
-        """
-        cur.execute(update_is_exceeded_query, [category_id])
+        # # Kiểm tra nếu actual_amount > amount sẽ cập nhật is_exceeded thành true
+        # update_is_exceeded_query = """
+        # UPDATE "CATEGORY" 
+        # SET is_exceeded = CASE 
+        #     WHEN actual_amount > amount THEN true
+        #     ELSE false
+        # END
+        # WHERE id = %s
+        # """
+        cur.execute(query, [category_id])
         conn.commit()
 
         cur.close()
@@ -289,43 +322,6 @@ def get_categories():
     try:
         cur.execute(query, params)
         categories = cur.fetchall()
-
-        # # Tìm các danh mục có `category_type=CHI` và kiểm tra `actual_amount`
-        # for row in categories:
-        #     if row[1] == "CHI":  # Giả sử `category_type` là phần tử thứ 3 trong tuple
-        #         user_id = row[8]  # Giả sử `user_id` là phần tử thứ 1
-        #         category_id = row[0]  # Giả sử `id` là phần tử thứ 2
-        #         new_actual_amount = row[5]  # Giả sử `actual_amount` là phần tử thứ 4
-
-        #         # Lấy actual_amount trước đó từ cơ sở dữ liệu
-        #         cur.execute(
-        #             'SELECT actual_amount FROM "CATEGORY" WHERE id = %s', [category_id]
-        #         )
-
-        #         # Lấy kết quả của truy vấn
-        #         previous_row = cur.fetchone()
-                
-        #         # Kiểm tra nếu không có kết quả
-        #         if not previous_row:
-        #             print(f"Không tìm thấy danh mục với id = {category_id}.")
-        #             continue
-
-        #         # Lấy giá trị actual_amount từ kết quả (ở vị trí đầu tiên của tuple)
-        #         previous_actual_amount = previous_row[0]
-
-        #         # So sánh actual_amount
-        #         if new_actual_amount != previous_actual_amount:
-        #             # Gửi thông báo qua HTTP POST
-        #             url = f"http://127.0.0.1:5000/post-alert?user_id={user_id}&category_id={category_id}"
-        #             try:
-        #                 response = requests.post(url)
-        #                 if response.status_code == 200:
-        #                     print(f"Thông báo đã được gửi thành công cho danh mục {category_id}.")
-        #                 else:
-        #                     print(f"Lỗi khi gửi thông báo: {response.status_code} - {response.text}")
-        #             except Exception as e:
-        #                 print(f"Lỗi khi gửi yêu cầu HTTP: {e}")
-
 
         cur.close()
         conn.close()

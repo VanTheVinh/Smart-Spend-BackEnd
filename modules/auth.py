@@ -44,6 +44,8 @@ def token_required(func):
 # Đăng ký
 @auth_bp.route('/register', methods=['POST'])
 def register():
+    from datetime import datetime
+
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
@@ -56,29 +58,71 @@ def register():
         return jsonify({"message": "Thiếu mật khẩu"}), 400
     if not fullname:
         return jsonify({"message": "Thiếu tên đầy đủ"}), 400
-    if not username and not password:
-        return jsonify({"message": "Thiếu tên người dùng và mật khẩu"}), 400
 
     conn = connect_db()
     cur = conn.cursor()
+
+    # Kiểm tra tên người dùng đã tồn tại
     cur.execute('SELECT * FROM "USER" WHERE username = %s', (username,))
     existing_user = cur.fetchone()
-    
+
     if existing_user:
         cur.close()
         conn.close()
         return jsonify({"message": "Tên người dùng đã tồn tại"}), 409
 
-    # Mã hóa mật khẩu trước khi lưu
+    # Mã hóa mật khẩu
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-    cur.execute('INSERT INTO "USER" (username, password, fullname, avatar) VALUES (%s, %s, %s, %s)',
-                (username, hashed_password, fullname, avatar))
+    # Ngày hiện tại (ngày đăng ký)
+    today_date = datetime.now().strftime('%Y-%m-%d')
+
+    # Thêm người dùng mới
+    cur.execute(
+        'INSERT INTO "USER" (username, password, fullname, avatar) VALUES (%s, %s, %s, %s) RETURNING id',
+        (username, hashed_password, fullname, avatar)
+    )
+    user_id = cur.fetchone()[0]
     conn.commit()
+
+    # Thêm các danh mục mặc định
+    DEFAULT_CATEGORIES = [
+        {"category_name": "Lương", "category_type": "THU"},
+        {"category_name": "Thu nhập khác", "category_type": "THU"},
+        {"category_name": "Tiền chuyển đến", "category_type": "THU"},
+
+        {"category_name": "Ăn uống", "category_type": "CHI"},
+        {"category_name": "Di chuyển", "category_type": "CHI"},
+        {"category_name": "Tiện ích (Thuê nhà, điện, nước, wifi, internet, ...)", "category_type": "CHI"},
+        {"category_name": "Giải trí", "category_type": "CHI"},
+        {"category_name": "Khác", "category_type": "CHI"},
+    ]
+
+    try:
+        for category in DEFAULT_CATEGORIES:
+            # Kiểm tra amount và actual_amount, gán giá trị mặc định nếu cần
+            percentage_limit = category.get('percentage_limit', 0) or 0
+            amount = category.get('amount', 0) or 0  # Mặc định là 1 nếu không có hoặc giá trị là None
+            actual_amount = category.get('actual_amount', 0) or 0  # Tương tự với actual_amount
+
+            cur.execute(
+                '''
+                INSERT INTO "CATEGORY" (user_id, category_name, category_type, percentage_limit, amount, actual_amount, time_frame)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''',
+                (user_id, category['category_name'], category['category_type'], percentage_limit, amount, actual_amount, today_date)
+            )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        return jsonify({"message": f"Lỗi khi thêm danh mục mặc định: {str(e)}"}), 500
+
     cur.close()
     conn.close()
-
     return jsonify({"message": "Đăng ký thành công"}), 201
+
 
 # Đăng nhập
 @auth_bp.route('/login', methods=['POST'])
@@ -96,13 +140,13 @@ def login():
 
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute('SELECT id, username, fullname, avatar, password FROM "USER" WHERE username = %s', (username,))
+    cur.execute('SELECT id, username, fullname, avatar, password, budget FROM "USER" WHERE username = %s', (username,))
     user = cur.fetchone()
     cur.close()
     conn.close()
 
     if user:
-        user_id, stored_username, fullname, avatar, stored_password = user
+        user_id, stored_username, fullname, avatar, stored_password, budget = user
 
         try:
             # Kiểm tra mật khẩu
@@ -117,7 +161,8 @@ def login():
                         "user_id": user_id,
                         "username": stored_username,
                         "fullname": fullname,
-                        "avatar": avatar
+                        "avatar": avatar,
+                        "budget": budget,
                     }
                 }), 200)
                 
@@ -145,3 +190,60 @@ def logout():
 @token_required
 def protected():
     return jsonify({"message": f"Phiên đăng nhập hợp lệ cho user_id: {request.user_id}"}), 200
+
+
+# @auth_bp.route('/user-info', methods=['GET'])
+# @jwt_required()  # Xác thực bằng JWT
+# def user_info():
+#     user_id = get_jwt_identity()  # Lấy user_id từ token
+#     conn = connect_db()
+#     cur = conn.cursor()
+#     cur.execute('SELECT username, fullname, avatar, budget FROM "USER" WHERE id = %s', (user_id,))
+#     user = cur.fetchone()
+#     cur.close()
+#     conn.close()
+
+#     if user:
+#         username, fullname, avatar, budget = user
+#         return jsonify({
+#             "status": "success",
+#             "user_info": {
+#                 "username": username,
+#                 "fullname": fullname,
+#                 "avatar": avatar,
+#                 "budget": budget,
+#             }
+#         }), 200
+#     return jsonify({"status": "error", "message": "Người dùng không tồn tại"}), 404
+
+
+
+# Xóa người dùng
+@auth_bp.route('/delete-user/<int:user_id>', methods=['DELETE'])
+# @token_required
+def delete_user(user_id):
+    conn = connect_db()
+    cur = conn.cursor()
+
+    try:
+        # Kiểm tra xem người dùng có tồn tại không
+        cur.execute('SELECT id FROM "USER" WHERE id = %s', (user_id,))
+        user = cur.fetchone()
+
+        if not user:
+            cur.close()
+            conn.close()
+            return jsonify({"message": "Người dùng không tồn tại"}), 404
+
+        # Xóa người dùng
+        cur.execute('DELETE FROM "USER" WHERE id = %s', (user_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"message": "Xóa người dùng thành công"}), 200
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        return jsonify({"message": f"Lỗi khi xóa người dùng: {str(e)}"}), 500

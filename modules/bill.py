@@ -302,18 +302,13 @@ def update_bill(bill_id):
         cur.close()
         conn.close()
         return jsonify({"message": "Người dùng không tồn tại"}), 404
-
-    # Kiểm tra tính hợp lệ của dữ liệu ngày tháng
+    
+    # Kiểm tra định dạng ngày
     if date:
         try:
-            datetime.strptime(date, "%d-%m-%Y")
+            date = datetime.strptime(data.get("date"), "%d-%m-%Y")
         except ValueError:
-            cur.close()
-            conn.close()
-            return (
-                jsonify({"message": "Ngày không hợp lệ, định dạng đúng là DD-MM-YYYY"}),
-                400,
-            )
+            return jsonify({"message": "Ngày không hợp lệ, phải có định dạng DD-MM-YYYY"}), 400
 
     # Xây dựng câu lệnh SQL động để cập nhật các trường được cung cấp
     query = 'UPDATE "BILL" SET'
@@ -336,7 +331,7 @@ def update_bill(bill_id):
         params.append(amount)
         updated_fields = True
 
-    if date and date != existing_bill['date']:  
+    if date and date != existing_bill["date"].strftime("%Y-%m-%d"):
         query += " date = %s,"
         params.append(date)
         updated_fields = True
