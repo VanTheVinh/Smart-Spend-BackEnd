@@ -200,9 +200,9 @@ def update_group(group_id):
     group_name = data.get("group_name")
     amount = data.get("amount")
     status = data.get("status")
-    user_id = data.get("user_id")  # Sử dụng user_id thay vì created_by
+    update_by = data.get("update_by")  # Sử dụng update_by thay vì created_by
 
-    if not user_id:
+    if not update_by:
         return (
             jsonify(
                 {"message": "Thiếu thông tin mã người dùng."}
@@ -238,13 +238,13 @@ def update_group(group_id):
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Kiểm tra xem user_id có tồn tại trong bảng "USER" không
+        # Kiểm tra xem update_by có tồn tại trong bảng "USER" không
         cur.execute(
             """
             SELECT id FROM "USER"
             WHERE id = %s;
             """,
-            (user_id,),
+            (update_by,),
         )
         user_exists = cur.fetchone()
         if not user_exists:
@@ -262,8 +262,8 @@ def update_group(group_id):
         if not group:
             return jsonify({"message": "Nhóm không tồn tại."}), 400
 
-        # Kiểm tra xem user_id có trùng với created_by của nhóm không
-        if group[0] != user_id:
+        # Kiểm tra xem update_by có trùng với created_by của nhóm không
+        if group[0] != update_by:
             return jsonify({"message": "Chỉ người tạo nhóm mới có quyền cập nhật nhóm."}), 403
 
         # Cập nhật thông tin nhóm
@@ -297,6 +297,12 @@ def delete_group():
     group_id = request.args.get("group_id")  # Lấy ID nhóm từ query parameter
     user_id = request.args.get("user_id")  # Lấy ID người tạo từ query parameter
 
+    if not group_id:
+        return jsonify({"message": "Thiếu thông tin mã nhóm."}), 404
+    
+    if not user_id:
+        return jsonify({"message": "Thiếu thông tin người dùng."}), 404
+
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -310,9 +316,20 @@ def delete_group():
             (group_id,),
         )
         group_exists = cur.fetchone()
-
         if not group_exists:
             return jsonify({"message": "Nhóm không tồn tại."}), 404
+        
+        # Kiểm tra nhóm có tồn tại
+        cur.execute(
+            """
+            SELECT id FROM "USER"
+            WHERE id = %s;
+        """,
+            (user_id,),
+        )
+        group_exists = cur.fetchone()
+        if not group_exists:
+            return jsonify({"message": "Người dùng không tồn tại."}), 404
 
         # Kiểm tra nhóm có thuộc quyền quản lý
         cur.execute(
@@ -446,15 +463,15 @@ def update_member_amount():
     group_id = data.get("group_id")
     user_id = data.get("user_id")
     member_amount = data.get("member_amount")
-    admin_id = data.get("admin_id")  # Người thực hiện yêu cầu
+    update_by = data.get("update_by")  # Người thực hiện yêu cầu
 
     # Kiểm tra thông tin bắt buộc
     if not group_id:
         return jsonify({"message": "Thiếu thông tin mã nhóm."}), 400
     if not user_id:
         return jsonify({"message": "Thiếu thông tin người dùng."}), 400
-    if not admin_id:
-        return jsonify({"message": "Thiếu thông tin quản trị viên."}), 400
+    if not update_by:
+        return jsonify({"message": "Thiếu thông tin người thực hiện thao tác cập nhật."}), 400
     if member_amount is None:  # Tránh trường hợp giá trị 0 bị bỏ qua
         return jsonify({"message": "Thiếu thông tin số tiền của thành viên."}), 400
 
@@ -468,7 +485,7 @@ def update_member_amount():
             SELECT role FROM "GROUP_MEMBER"
             WHERE group_id = %s AND user_id = %s;
         """,
-            (group_id, admin_id),
+            (group_id, update_by),
         )
         admin_role = cur.fetchone()
         if not admin_role or admin_role[0] != "admin":
