@@ -217,6 +217,106 @@ def protected():
 #     return jsonify({"status": "error", "message": "Người dùng không tồn tại"}), 404
 
 
+@auth_bp.route('/get-user/<int:user_id>', methods=['GET'])
+def get_user(user_id):
+    """
+    Endpoint để lấy tất cả thông tin của người dùng dựa trên user_id.
+    """
+    try:
+        # Kết nối đến cơ sở dữ liệu
+        with connect_db() as conn:
+            with conn.cursor() as cur:
+                # Truy vấn tất cả thông tin người dùng từ bảng USER
+                cur.execute('SELECT id, username, fullname, avatar, budget FROM "USER" WHERE id = %s', (user_id,))
+                user = cur.fetchone()
+
+                # Kiểm tra xem người dùng có tồn tại
+                if not user:
+                    return jsonify({"status": "error", "message": "Người dùng không tồn tại"}), 404
+
+                # Định dạng thông tin người dùng thành dictionary
+                user_info = {
+                    "id": user[0],
+                    "username": user[1],
+                    "fullname": user[2],
+                    "avatar": user[3],
+                    "budget": user[4]
+                }
+
+                # Trả về thông tin người dùng trực tiếp mà không bọc trong "user"
+                return jsonify(user_info), 200
+    except Exception as e:
+        # Xử lý lỗi và trả về thông báo lỗi
+        return jsonify({"status": "error", "message": "Đã xảy ra lỗi trong quá trình xử lý"}), 500
+
+
+@auth_bp.route('/update-user/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    """
+    Endpoint để cập nhật tất cả thông tin của người dùng dựa trên user_id.
+    """
+    try:
+        # Lấy dữ liệu từ request
+        data = request.json
+
+        # Kiểm tra xem các trường cần thiết có trong dữ liệu không
+        username = data.get('username')
+        fullname = data.get('fullname')
+        avatar = data.get('avatar')
+        budget = data.get('budget')
+
+        # Chuyển user_id và budget thành kiểu số nguyên
+        user_id = int(user_id)  # Đảm bảo user_id là số nguyên
+        if budget is not None:
+            budget = int(budget)  # Đảm bảo budget là số nguyên nếu có
+
+        # Kết nối đến cơ sở dữ liệu
+        with connect_db() as conn:
+            with conn.cursor() as cur:
+                # Truy vấn kiểm tra người dùng có tồn tại không
+                cur.execute('SELECT id FROM "USER" WHERE id = %s', (user_id,))
+                user = cur.fetchone()
+
+                if not user:
+                    return jsonify({"status": "error", "message": "Người dùng không tồn tại"}), 404
+
+                # Cập nhật thông tin người dùng
+                update_fields = []
+                update_values = []
+
+                if username:
+                    update_fields.append('username = %s')
+                    update_values.append(username)
+
+                if fullname:
+                    update_fields.append('fullname = %s')
+                    update_values.append(fullname)
+
+                if avatar is not None:  # cho phép giá trị avatar là null
+                    update_fields.append('avatar = %s')
+                    update_values.append(avatar)
+
+                if budget is not None:  # cho phép giá trị budget là null
+                    update_fields.append('budget = %s')
+                    update_values.append(budget)
+
+                if not update_fields:
+                    return jsonify({"status": "error", "message": "Không có thông tin nào để cập nhật"}), 400
+
+                # Thêm điều kiện để cập nhật cho người dùng cụ thể
+                update_values.append(user_id)
+                update_query = f'UPDATE "USER" SET {", ".join(update_fields)} WHERE id = %s'
+                cur.execute(update_query, tuple(update_values))
+                conn.commit()
+
+                # Trả về thông báo thành công
+                return jsonify({"status": "success", "message": "Thông tin người dùng đã được cập nhật thành công"}), 200
+
+    except Exception as e:
+        # Xử lý lỗi và trả về thông báo lỗi
+        return jsonify({"status": "error", "message": "Đã xảy ra lỗi trong quá trình xử lý"}), 500
+
+
 
 # Xóa người dùng
 @auth_bp.route('/delete-user/<int:user_id>', methods=['DELETE'])

@@ -351,7 +351,44 @@ def get_categories():
         return jsonify({"message": f"Lỗi khi lấy danh mục: {str(e)}"}), 500
 
 
+def get_category_name():
+    # Lấy tham số category_id từ query string
+    category_id = request.args.get("category_id")
+    
+    # Kiểm tra category_id
+    if not category_id:
+        return jsonify({"status": "error", "message": "Thiếu tham số category_id"}), 400
 
+    # Kết nối đến cơ sở dữ liệu
+    conn = connect_db()
+    cur = conn.cursor()
+
+    # Câu lệnh SQL
+    query = 'SELECT category_name FROM "CATEGORY" WHERE id = %s'
+
+    try:
+        # Thực thi câu truy vấn
+        cur.execute(query, [category_id])
+        result = cur.fetchone()
+
+        # Kiểm tra kết quả
+        if not result:
+            cur.close()
+            conn.close()
+            return jsonify({"status": "error", "message": "Không tìm thấy danh mục"}), 404
+
+        category_name = result[0]
+
+        # Đóng kết nối
+        cur.close()
+        conn.close()
+
+        return jsonify({"status": "success", "category_name": category_name}), 200
+
+    except Exception as e:
+        cur.close()
+        conn.close()
+        return jsonify({"status": "error", "message": f"Lỗi khi truy vấn: {str(e)}"}), 500
 
 
 # Route để xóa danh mục

@@ -36,7 +36,6 @@ def upload_invoice():
             try:
                 # Giả sử dữ liệu từ file Excel có các cột tương ứng
                 type = row["type"]
-                is_income = row["source"]
                 amount = row["amount"]
                 date = row["date"]
                 description = row["description"]
@@ -44,10 +43,9 @@ def upload_invoice():
                 category_id = row["category_id"]
 
                 cur.execute(
-                    'INSERT INTO "BILL" (type, source, amount, date, description, user_id, category_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+                    'INSERT INTO "BILL" (type, amount, date, description, user_id, category_id) VALUES (%s, %s, %s, %s, %s, %s)',
                     (
                         type,
-                        is_income,
                         amount,
                         date,
                         description,
@@ -75,13 +73,17 @@ def upload_invoice():
 def add_bill():
     data = request.get_json()
     type = data.get("type") 
-    source = data.get("source", "")
     amount = data.get("amount")
     if amount:
         amount = float(amount)
     description = data.get("description", "")
     category_id = data.get("category_id")
     user_id = data.get("user_id")
+    group_id = data.get("group_id")
+
+    # Nếu không có group_id thì gán là None (NULL trong CSDL)
+    if not group_id:
+        group_id = None
     
     # Kết nối CSDL
     conn = connect_db()
@@ -104,11 +106,6 @@ def add_bill():
         if type:
             if type not in ["CHI", "THU"]:
                 return jsonify({"message": "Giá trị của 'type' phải là 'CHI' hoặc 'THU'"}), 400
-
-        # Kiểm tra giá trị của source
-        if source:
-            if source not in ["TIỀN MẶT", "CHUYỂN KHOẢN"]:
-                return jsonify({"message": "Giá trị của 'source' phải là 'TIỀN MẶT' hoặc 'CHUYỂN KHOẢN'"}), 400
 
         # Kiểm tra định dạng ngày
         try:
@@ -141,8 +138,8 @@ def add_bill():
 
         # Chèn dữ liệu vào database
         cur.execute(
-            'INSERT INTO "BILL" (type, source, amount, date, description, user_id, category_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
-            (type, source, amount, date.strftime("%Y-%m-%d"), description, user_id, category_id),
+            'INSERT INTO "BILL" (type, amount, date, description, user_id, category_id, group_id) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+            (type, amount, date.strftime("%Y-%m-%d"), description, user_id, category_id, group_id),
         )
 
         conn.commit()
@@ -164,10 +161,11 @@ def get_bills():
     # Lấy tham số từ query string
     id = request.args.get("id")
     type = request.args.get("type")
-    source = request.args.get("source")
     date = request.args.get("date")
     user_id = request.args.get("user_id")
     category_id = request.args.get("category_id")
+    group_id = request.args.get("group_id")
+    is_group_bill = request.args.get("is_group_bill")
     month = request.args.get("month")
     year = request.args.get("year")
 
@@ -188,9 +186,6 @@ def get_bills():
     if type:
         query += " AND type = %s"
         params.append(type)
-    if source:
-        query += " AND source = %s"
-        params.append(source)
     if date:
         query += " AND date = %s"
         params.append(date)
@@ -200,6 +195,13 @@ def get_bills():
     if category_id:
         query += " AND category_id = %s"
         params.append(category_id)
+    if group_id:
+        query += " AND group_id = %s"
+        params.append(group_id)
+
+    if is_group_bill :
+        query += " AND is_group_bill  = %s"
+        params.append(is_group_bill )
 
     # Kiểm tra và thêm điều kiện theo tháng và năm nếu có
     if month and year:
@@ -236,17 +238,18 @@ def get_bills():
         bills_list = []
         for bill in bills:
             # Định dạng lại ngày
-            formatted_date = bill[4].strftime("%d-%m-%Y") if bill[4] else None
+            formatted_date = bill[3].strftime("%d-%m-%Y") if bill[3] else None
             bills_list.append(
                 {
                     "id": bill[0],
                     "type": bill[1],
-                    "source": bill[2],
-                    "amount": bill[3],
+                    "amount": bill[2],
                     "date": formatted_date,
-                    "description": bill[5],
-                    "user_id": bill[6],
-                    "category_id": bill[7],
+                    "description": bill[4],
+                    "user_id": bill[5],
+                    "category_id": bill[6],
+                    "group_id": bill[7],
+                    "is_group_bill": bill[8],
                 }
             )
 
@@ -268,7 +271,6 @@ def update_bill(bill_id):
 
     # Lấy ra các trường cần cập nhật
     type = data.get("type")
-    source = data.get("source")
     amount = data.get("amount", "")
     date = data.get("date")
     description = data.get("description", "")
@@ -319,11 +321,6 @@ def update_bill(bill_id):
     if type and type != existing_bill['type']:  
         query += " type = %s,"
         params.append(type)
-        updated_fields = True
-
-    if source and source != existing_bill['source']:  
-        query += " source = %s,"
-        params.append(source)
         updated_fields = True
 
     if amount and amount != existing_bill['amount']:  
