@@ -641,7 +641,7 @@ def get_group_detail():
         # Kiểm tra xem nhóm có tồn tại không
         cur.execute(
             """ 
-            SELECT id, group_name, amount, status, created_by, created_at 
+            SELECT id, group_name, amount, actual_amount, status, created_by, created_at 
             FROM "GROUP"
             WHERE id = %s;
         """,
@@ -657,10 +657,11 @@ def get_group_detail():
             "id": group_detail[0],
             "group_name": group_detail[1],
             "amount": group_detail[2],
-            "status": group_detail[3],
-            "created_by": group_detail[4],
+            "actual_amount": group_detail[3],
+            "status": group_detail[4],
+            "created_by": group_detail[5],
             "created_at": (
-                group_detail[5].strftime("%d-%m-%Y") if group_detail[5] else None
+                group_detail[6].strftime("%d-%m-%Y") if group_detail[6] else None
             ),
         }
 

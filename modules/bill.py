@@ -264,6 +264,103 @@ def get_bills():
         return jsonify({"message": f"Lỗi khi lấy dữ liệu: {str(e)}"}), 500
 
 
+# Route lọc Bill
+@bill_bp.route("/filter-bills", methods=["GET"])
+def filter_bills():
+    # Lấy tham số từ query string
+    type = request.args.get("type")
+    amount = request.args.get("amount")
+    date = request.args.get("date")
+
+    # Kết nối đến cơ sở dữ liệu
+    conn = connect_db()
+    cur = conn.cursor()
+
+    # Xây dựng câu lệnh SQL
+    query = 'SELECT * FROM "BILL" WHERE 1=1'  # 1=1 là để tiện nối thêm điều kiện sau này
+    params = []
+
+    # Thêm các điều kiện vào câu truy vấn
+    if type:
+        query += " AND type = %s"
+        params.append(type)
+    
+    if amount:
+        try:
+            # Kiểm tra amount có phải là 'asc', 'desc' hoặc một số hợp lệ không
+            if amount not in ["asc", "desc"]:
+                amount = float(amount)  # Kiểm tra nếu là số hợp lệ
+                query += " AND amount = %s"
+                params.append(amount)
+        except ValueError:
+            cur.close()
+            conn.close()
+            return jsonify({"message": "Tham số amount phải là 'asc', 'desc' hoặc một số hợp lệ"}), 400
+
+    if date:
+        if date not in ["asc", "desc"]:
+            cur.close()
+            conn.close()
+            return jsonify({"message": "Tham số date phải là 'asc' hoặc 'desc'"}), 400
+
+    # Thêm phần sắp xếp theo amount và date
+    order_by_clause = ""
+    if amount == "asc":
+        order_by_clause += " ORDER BY amount ASC"
+    elif amount == "desc":
+        order_by_clause += " ORDER BY amount DESC"
+
+    if date == "asc":
+        if order_by_clause:  # Nếu đã có phần sắp xếp theo amount, nối với sắp xếp theo date
+            order_by_clause += ", date ASC"
+        else:
+            order_by_clause += " ORDER BY date ASC"
+    elif date == "desc":
+        if order_by_clause:  # Nếu đã có phần sắp xếp theo amount, nối với sắp xếp theo date
+            order_by_clause += ", date DESC"
+        else:
+            order_by_clause += " ORDER BY date DESC"
+
+    query += order_by_clause
+
+    try:
+        # Thực thi câu lệnh SQL
+        cur.execute(query, params)
+        bills = cur.fetchall()
+
+        # Chuyển đổi kết quả truy vấn thành danh sách từ điển
+        bills_list = []
+        for bill in bills:
+            # Định dạng lại ngày
+            formatted_date = bill[3].strftime("%d-%m-%Y") if bill[3] else None
+            bills_list.append(
+                {
+                    "id": bill[0],
+                    "type": bill[1],
+                    "amount": bill[2],
+                    "date": formatted_date,
+                    "description": bill[4],
+                    "user_id": bill[5],
+                    "category_id": bill[6],
+                    "group_id": bill[7],
+                    "is_group_bill": bill[8],
+                }
+            )
+
+        cur.close()
+        conn.close()
+
+        return jsonify(bills_list), 200
+
+    except Exception as e:
+        cur.close()
+        conn.close()
+        return jsonify({"message": f"Lỗi khi lấy dữ liệu: {str(e)}"}), 500
+
+
+        
+
+
 # Cập nhật bill theo id
 @bill_bp.route("/update-bill/<int:bill_id>", methods=["PUT"])
 def update_bill(bill_id):

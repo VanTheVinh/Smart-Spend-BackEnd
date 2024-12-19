@@ -110,7 +110,8 @@ def add_category():
 
     return jsonify({"message": "Thêm danh mục thành công"}), 201
 
-# Cập nhật category
+
+# Cập nhật danh mục
 @category_bp.route("/update-category/<int:category_id>", methods=["PUT"])
 def update_category(category_id):
     data = request.get_json()
@@ -136,12 +137,7 @@ def update_category(category_id):
         try:
             percentage_limit = float(percentage_limit)
             if percentage_limit < 0 or percentage_limit > 100:
-                return (
-                    jsonify(
-                        {"message": "percentage_limit phải trong khoảng từ 0 đến 100"}
-                    ),
-                    400,
-                )
+                return jsonify({"message": "percentage_limit phải trong khoảng từ 0 đến 100"}), 400
         except ValueError:
             return jsonify({"message": "percentage_limit không hợp lệ"}), 400
 
@@ -163,49 +159,15 @@ def update_category(category_id):
         except ValueError:
             return jsonify({"message": "actual_amount không hợp lệ"}), 400
 
-
-    # Kiểm tra và chuyển đổi time_frame sang định dạng yyyy-mm-dd
-    try:
-        # Chuyển time_frame từ dd-mm-yyyy sang yyyy-mm-dd
-        time_frame = datetime.strptime(time_frame, "%d-%m-%Y").strftime("%Y-%m-%d")
-    except ValueError:
-        return jsonify({"message": "time_frame phải có định dạng dd-mm-yyyy"}), 400
+    # Kiểm tra và chuyển đổi time_frame sang định dạng yyyy-mm-dd nếu có
+    if time_frame:
+        try:
+            time_frame = datetime.strptime(time_frame, "%d-%m-%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return jsonify({"message": "time_frame phải có định dạng dd-mm-yyyy"}), 400
 
     conn = connect_db()
     cur = conn.cursor()
-
-
-    # Nếu percentage_limit được cung cấp, tính toán lại amount
-    # if percentage_limit is not None:
-    #     try:
-    #         # Lấy user_id từ danh mục hiện tại
-    #         cur.execute('SELECT user_id FROM "CATEGORY" WHERE id = %s', [category_id])
-    #         user_result = cur.fetchone()
-    #         if not user_result:
-    #             cur.close()
-    #             conn.close()
-    #             return jsonify({"message": "Danh mục không tồn tại"}), 404
-
-    #         user_id = user_result[0]
-
-    #         # Lấy budget từ bảng USER
-    #         cur.execute('SELECT budget FROM "USER" WHERE id = %s', [user_id])
-    #         budget_result = cur.fetchone()
-    #         if not budget_result or budget_result[0] is None:
-    #             cur.close()
-    #             conn.close()
-    #             return jsonify({"message": "Người dùng chưa thiết lập ngân sách"}), 400
-
-    #         budget = float(budget_result[0])
-
-    #         # Tính toán amount mới
-
-    #         amount = (percentage_limit / 100) * budget
-    #     except Exception as e:
-    #         cur.close()
-    #         conn.close()
-    #         return jsonify({"message": f"Lỗi khi tính toán amount: {str(e)}"}), 500
-        
 
     # Xây dựng câu lệnh SQL động để cập nhật các trường được cung cấp
     query = 'UPDATE "CATEGORY" SET'
@@ -235,26 +197,15 @@ def update_category(category_id):
     params.append(category_id)
 
     try:
-        # Thực thi câu lệnh SQL
+        # Thực thi câu lệnh SQL cập nhật các trường
         cur.execute(query, params)
         conn.commit()
 
+        # Kiểm tra nếu không có bản ghi nào được cập nhật
         if cur.rowcount == 0:
             cur.close()
             conn.close()
             return jsonify({"message": "Danh mục không tồn tại"}), 404
-        
-        # # Kiểm tra nếu actual_amount > amount sẽ cập nhật is_exceeded thành true
-        # update_is_exceeded_query = """
-        # UPDATE "CATEGORY" 
-        # SET is_exceeded = CASE 
-        #     WHEN actual_amount > amount THEN true
-        #     ELSE false
-        # END
-        # WHERE id = %s
-        # """
-        cur.execute(query, [category_id])
-        conn.commit()
 
         cur.close()
         conn.close()
@@ -266,6 +217,7 @@ def update_category(category_id):
         cur.close()
         conn.close()
         return jsonify({"message": f"Lỗi khi cập nhật danh mục: {str(e)}"}), 500
+
 
 
 # Route để lấy danh mục, sắp xếp theo actual_amount

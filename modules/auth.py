@@ -1,12 +1,213 @@
 import jwt
 import bcrypt
-from flask import Blueprint, request, jsonify, make_response
+import os
+import base64
+import requests
+from werkzeug.utils import secure_filename
+from flask import Blueprint, request, jsonify, make_response, current_app
 from datetime import datetime, timedelta, timezone
 from modules.db import connect_db
 
 # Tạo blueprint cho các route liên quan đến đăng nhập
 auth_bp = Blueprint('auth', __name__)
 SECRET_KEY = "your_secret_key_here"  # Khóa bí mật dùng để ký JWT
+
+
+# Cấu hình GitHub API
+GITHUB_API_URL = "https://api.github.com/repos/VanTheVinh/avatars-storage-spend-web/contents"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # Token GitHub từ biến môi trường
+
+# Hỗ trợ định dạng file hợp lệ
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@auth_bp.route('/upload-avatar/<int:user_id>', methods=['POST'])
+def upload_avatar(user_id):
+    """
+    Endpoint để người dùng tải lên avatar và lưu vào GitHub repo với tên file avatar_user_<user_id>.
+    """
+    try:
+        # Kiểm tra xem request có chứa file không
+        if 'avatar' not in request.files:
+            return jsonify({"status": "error", "message": "Không có file avatar"}), 400
+
+        file = request.files['avatar']
+
+        # Kiểm tra nếu file trống
+        if file.filename == '':
+            return jsonify({"status": "error", "message": "Không có file avatar được chọn"}), 400
+
+        # Kiểm tra định dạng file
+        if file and allowed_file(file.filename):
+            # Đổi tên file thành avatar_user_<user_id> với đúng phần mở rộng
+            file_extension = file.filename.rsplit('.', 1)[1].lower()
+            filename = f"avatar_user_{user_id}.{file_extension}"
+
+            # Kiểm tra xem file cũ đã tồn tại trên GitHub hay chưa
+            response_check = requests.get(
+                f"{GITHUB_API_URL}/avatars/{filename}",
+                headers={
+                    "Authorization": f"token {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+            )
+
+            sha = None
+            if response_check.status_code == 200:
+                # Lấy SHA của file hiện tại nếu tồn tại
+                sha = response_check.json().get('sha')
+
+            # Đọc nội dung file và encode thành base64
+            file_content = file.read()
+            encoded_content = base64.b64encode(file_content).decode('utf-8')
+
+            # Tạo payload để upload hoặc thay thế file trên GitHub
+            payload = {
+                "message": f"Upload avatar for user {user_id}",
+                "content": encoded_content,
+                "committer": {
+                    "name": "Your Name",
+                    "email": "your_email@example.com"
+                }
+            }
+
+            if sha:
+                payload["sha"] = sha  # Thêm SHA nếu file đã tồn tại để thay thế
+
+            # Gửi request để upload file lên GitHub
+            response = requests.put(
+                f"{GITHUB_API_URL}/avatars/{filename}",
+                headers={
+                    "Authorization": f"token {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json"
+                },
+                json=payload
+            )
+
+            # Kiểm tra phản hồi từ GitHub API
+            if response.status_code in (200, 201):  # 200: Update, 201: Create
+                avatar_url = response.json()['content']['download_url']
+
+                # Cập nhật đường dẫn avatar trong cơ sở dữ liệu
+                with connect_db() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute('SELECT id FROM "USER" WHERE id = %s', (user_id,))
+                        user = cur.fetchone()
+
+                        if not user:
+                            return jsonify({"status": "error", "message": "Người dùng không tồn tại"}), 404
+
+                        # Cập nhật avatar trong cơ sở dữ liệu
+                        cur.execute('UPDATE "USER" SET avatar = %s WHERE id = %s', (avatar_url, user_id))
+                        conn.commit()
+
+                return jsonify({
+                    "status": "success",
+                    "message": "Avatar đã được cập nhật thành công",
+                    "avatar": avatar_url
+                }), 200
+
+            else:
+                # Lấy chi tiết lỗi từ phản hồi của GitHub
+                error_details = response.json()
+                return jsonify({
+                    "status": "error",
+                    "message": "Không thể tải ảnh lên GitHub",
+                    "details": error_details
+                }), 500
+
+        return jsonify({
+            "status": "error",
+            "message": "Định dạng file không hợp lệ. Chỉ hỗ trợ file .png, .jpg, .jpeg"
+        }), 400
+
+    except Exception as e:
+        # Xử lý lỗi chung
+        return jsonify({
+            "status": "error",
+            "message": "Đã xảy ra lỗi khi tải lên avatar",
+            "details": str(e)
+        }), 500
+
+
+
+
+@auth_bp.route('/delete-avatar/<int:user_id>', methods=['DELETE'])
+def delete_avatar(user_id):
+    """
+    Endpoint để xóa avatar của người dùng khỏi GitHub repo.
+    """
+    try:
+        with connect_db() as conn:
+            with conn.cursor() as cur:
+                # Lấy thông tin avatar từ database
+                cur.execute('SELECT avatar FROM "USER" WHERE id = %s', (user_id,))
+                user = cur.fetchone()
+
+                if not user or not user[0]:
+                    return jsonify({"status": "error", "message": "Người dùng không tồn tại hoặc không có avatar"}), 404
+
+                avatar_url = user[0]
+
+                # Lấy tên file từ URL avatar
+                filename = avatar_url.split('/')[-1]
+
+                # API URL đến file trên GitHub
+                github_file_url = f"{GITHUB_API_URL}/avatars/{filename}"
+
+                # Lấy thông tin sha của file
+                sha_response = requests.get(
+                    github_file_url,
+                    headers={
+                        "Authorization": f"token {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json"
+                    }
+                )
+
+                if sha_response.status_code != 200:
+                    return jsonify({"status": "error", "message": "Không tìm thấy file trên GitHub"}), 404
+
+                file_sha = sha_response.json()['sha']
+
+                # Xóa file bằng GitHub API
+                delete_payload = {
+                    "message": f"Delete avatar for user {user_id}",
+                    "sha": file_sha,
+                    "committer": {
+                        "name": "Your Name",
+                        "email": "your_email@example.com"
+                    }
+                }
+
+                delete_response = requests.delete(
+                    github_file_url,
+                    headers={
+                        "Authorization": f"token {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json"
+                    },
+                    json=delete_payload
+                )
+
+                if delete_response.status_code == 200:
+                    # Xóa đường dẫn avatar trong cơ sở dữ liệu
+                    cur.execute('UPDATE "USER" SET avatar = NULL WHERE id = %s', (user_id,))
+                    conn.commit()
+
+                    return jsonify({"status": "success", "message": "Avatar đã được xóa thành công"}), 200
+
+                else:
+                    return jsonify({"status": "error", "message": "Không thể xóa avatar khỏi GitHub", "details": delete_response.json()}), 500
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Đã xảy ra lỗi khi xóa avatar", "details": str(e)}), 500
+
+
+
+
+
 
 # Hàm tạo Access Token
 def generate_access_token(user_id):
@@ -41,11 +242,8 @@ def token_required(func):
     wrapper.__name__ = func.__name__
     return wrapper
 
-# Đăng ký
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    from datetime import datetime
-
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
@@ -77,6 +275,10 @@ def register():
     # Ngày hiện tại (ngày đăng ký)
     today_date = datetime.now().strftime('%Y-%m-%d')
 
+    # Kiểm tra nếu không có ảnh, sử dụng ảnh mặc định
+    if not avatar:
+        avatar = '/static/images/avatars/default_avatar.jpg'  # Đường dẫn ảnh mặc định
+
     # Thêm người dùng mới
     cur.execute(
         'INSERT INTO "USER" (username, password, fullname, avatar) VALUES (%s, %s, %s, %s) RETURNING id',
@@ -90,7 +292,6 @@ def register():
         {"category_name": "Lương", "category_type": "THU"},
         {"category_name": "Thu nhập khác", "category_type": "THU"},
         {"category_name": "Tiền chuyển đến", "category_type": "THU"},
-
         {"category_name": "Ăn uống", "category_type": "CHI"},
         {"category_name": "Di chuyển", "category_type": "CHI"},
         {"category_name": "Tiện ích (Thuê nhà, điện, nước, wifi, internet, ...)", "category_type": "CHI"},
@@ -102,8 +303,8 @@ def register():
         for category in DEFAULT_CATEGORIES:
             # Kiểm tra amount và actual_amount, gán giá trị mặc định nếu cần
             percentage_limit = category.get('percentage_limit', 0) or 0
-            amount = category.get('amount', 0) or 0  # Mặc định là 1 nếu không có hoặc giá trị là None
-            actual_amount = category.get('actual_amount', 0) or 0  # Tương tự với actual_amount
+            amount = category.get('amount', 0) or 0
+            actual_amount = category.get('actual_amount', 0) or 0
 
             cur.execute(
                 '''
@@ -192,31 +393,6 @@ def protected():
     return jsonify({"message": f"Phiên đăng nhập hợp lệ cho user_id: {request.user_id}"}), 200
 
 
-# @auth_bp.route('/user-info', methods=['GET'])
-# @jwt_required()  # Xác thực bằng JWT
-# def user_info():
-#     user_id = get_jwt_identity()  # Lấy user_id từ token
-#     conn = connect_db()
-#     cur = conn.cursor()
-#     cur.execute('SELECT username, fullname, avatar, budget FROM "USER" WHERE id = %s', (user_id,))
-#     user = cur.fetchone()
-#     cur.close()
-#     conn.close()
-
-#     if user:
-#         username, fullname, avatar, budget = user
-#         return jsonify({
-#             "status": "success",
-#             "user_info": {
-#                 "username": username,
-#                 "fullname": fullname,
-#                 "avatar": avatar,
-#                 "budget": budget,
-#             }
-#         }), 200
-#     return jsonify({"status": "error", "message": "Người dùng không tồn tại"}), 404
-
-
 @auth_bp.route('/get-user/<int:user_id>', methods=['GET'])
 def get_user(user_id):
     """
@@ -227,7 +403,7 @@ def get_user(user_id):
         with connect_db() as conn:
             with conn.cursor() as cur:
                 # Truy vấn tất cả thông tin người dùng từ bảng USER
-                cur.execute('SELECT id, username, fullname, avatar, budget FROM "USER" WHERE id = %s', (user_id,))
+                cur.execute('SELECT id, username, fullname, avatar, budget, actual_budget FROM "USER" WHERE id = %s', (user_id,))
                 user = cur.fetchone()
 
                 # Kiểm tra xem người dùng có tồn tại
@@ -240,7 +416,8 @@ def get_user(user_id):
                     "username": user[1],
                     "fullname": user[2],
                     "avatar": user[3],
-                    "budget": user[4]
+                    "budget": user[4],
+                    "actual_budget": user[5]
                 }
 
                 # Trả về thông tin người dùng trực tiếp mà không bọc trong "user"
@@ -253,7 +430,7 @@ def get_user(user_id):
 @auth_bp.route('/update-user/<int:user_id>', methods=['PUT'])
 def update_user(user_id):
     """
-    Endpoint để cập nhật tất cả thông tin của người dùng dựa trên user_id.
+    Endpoint để cập nhật tất cả thông tin của người dùng dựa trên user_id, bao gồm mật khẩu.
     """
     try:
         # Lấy dữ liệu từ request
@@ -264,6 +441,7 @@ def update_user(user_id):
         fullname = data.get('fullname')
         avatar = data.get('avatar')
         budget = data.get('budget')
+        password = data.get('password')  # Lấy mật khẩu từ request
 
         # Chuyển user_id và budget thành kiểu số nguyên
         user_id = int(user_id)  # Đảm bảo user_id là số nguyên
@@ -299,6 +477,12 @@ def update_user(user_id):
                 if budget is not None:  # cho phép giá trị budget là null
                     update_fields.append('budget = %s')
                     update_values.append(budget)
+
+                if password:  # Nếu có mật khẩu mới
+                    # Mã hóa mật khẩu mới
+                    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    update_fields.append('password = %s')
+                    update_values.append(hashed_password)
 
                 if not update_fields:
                     return jsonify({"status": "error", "message": "Không có thông tin nào để cập nhật"}), 400
