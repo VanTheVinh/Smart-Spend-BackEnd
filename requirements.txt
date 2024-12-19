@@ -1,9 +1,9 @@
 # Cài đặt và chạy môi trường ảo
-python -m venv venv  # Tạo môi trường ảo
-venv\Scripts\activate  # Kích hoạt môi trường ảo trên Windows
+# python -m venv venv  # Tạo môi trường ảo
+# venv\Scripts\activate  # Kích hoạt môi trường ảo trên Windows
 
 # Cài đặt các thư viện từ requirements.txt
-pip install -r requirements.txt  
+# pip install -r requirements.txt  
 
 bcrypt==4.2.0
 blinker==1.8.2
