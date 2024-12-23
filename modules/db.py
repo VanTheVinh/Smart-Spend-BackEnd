@@ -2,6 +2,7 @@
 import psycopg2
 from config import Config
 
+
 def connect_db():
     conn = psycopg2.connect(
         dbname=Config.DB_NAME,

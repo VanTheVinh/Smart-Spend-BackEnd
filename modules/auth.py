@@ -6,7 +6,15 @@ import requests
 from werkzeug.utils import secure_filename
 from flask import Blueprint, request, jsonify, make_response, current_app
 from datetime import datetime, timedelta, timezone
-from modules.db import connect_db
+from modules.db import connect_db, send_reset_email
+import uuid
+import smtplib
+from email.mime.text import MIMEText
+from config import Config
+
+
+API_URL = 'https://smart-spend-backend-production.up.railway.app'; 
+
 
 # Tạo blueprint cho các route liên quan đến đăng nhập
 auth_bp = Blueprint('auth', __name__)
@@ -531,3 +539,66 @@ def delete_user(user_id):
         cur.close()
         conn.close()
         return jsonify({"message": f"Lỗi khi xóa người dùng: {str(e)}"}), 500
+
+
+
+
+
+# Đặt lại mật khẩu
+# Hàm gửi email đặt lại mật khẩu
+def send_reset_email(email, token):
+    reset_url = f"${API_URL}/reset-password?token={token}"
+    email_body = f"""
+    Xin chào,
+
+    Nhấn vào liên kết sau để đặt lại mật khẩu: 
+    {reset_url}
+
+    Liên kết sẽ hết hạn sau 15 phút.
+    """
+    msg = MIMEText(email_body)
+    msg['Subject'] = 'Đặt lại mật khẩu'
+    msg['From'] = Config.EMAIL_USERNAME
+    msg['To'] = email
+
+    # Gửi email
+    with smtplib.SMTP(Config.EMAIL_SERVER, Config.EMAIL_PORT) as server:
+        server.starttls()  # Bật mã hóa TLS
+        server.login(Config.EMAIL_USERNAME, Config.EMAIL_PASSWORD)
+        server.sendmail(Config.EMAIL_USERNAME, email, msg.as_string())
+
+@auth_bp.route('/reset-password-request', methods=['POST'])
+def reset_password_request():
+    data = request.json
+    email = data.get('email')
+
+    if not email:
+        return jsonify({"status": "error", "message": "Vui lòng cung cấp email."}), 400
+
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    # Kiểm tra email trong bảng USER
+    cursor.execute('SELECT id FROM "USER" WHERE email = %s', (email,))
+    user = cursor.fetchone()
+
+    if not user:
+        return jsonify({"status": "error", "message": "Email không tồn tại."}), 404
+
+    user_id = user[0]  # Lấy user_id từ bảng USER
+
+    # Tạo token và thời gian hết hạn
+    token = str(uuid.uuid4())
+    expires_at = datetime.now() + timedelta(minutes=15)
+
+    # Lưu token vào bảng PASSWORD_RESET_TOKENS
+    cursor.execute("""
+        INSERT INTO password_reset_tokens (user_id, token, expires_at)
+        VALUES (%s, %s, %s)
+    """, (user_id, token, expires_at))
+    conn.commit()
+
+    # Gửi email chứa token
+    send_reset_email(email, token)
+
+    return jsonify({"status": "success", "message": "Email khôi phục mật khẩu đã được gửi."})

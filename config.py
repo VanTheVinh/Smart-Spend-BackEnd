@@ -8,3 +8,9 @@ class Config:
     DB_PASSWORD = "nlSqZHxeaiYvjwMkYCFWSElHzWOhLSme"
     DB_HOST = "junction.proxy.rlwy.net"
     DB_PORT = "51474"
+
+ # Cấu hình email
+    EMAIL_USERNAME = os.environ.get('EMAIL_USERNAME')
+    EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
+    EMAIL_SERVER = os.environ.get('EMAIL_SERVER')
+    EMAIL_PORT = os.environ.get('EMAIL_PORT')
