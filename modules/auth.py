@@ -6,7 +6,7 @@ import requests
 from werkzeug.utils import secure_filename
 from flask import Blueprint, request, jsonify, make_response, current_app
 from datetime import datetime, timedelta, timezone
-from modules.db import connect_db, send_reset_email
+from modules.db import connect_db
 import uuid
 import smtplib
 from email.mime.text import MIMEText
@@ -547,7 +547,7 @@ def delete_user(user_id):
 # Đặt lại mật khẩu
 # Hàm gửi email đặt lại mật khẩu
 def send_reset_email(email, token):
-    reset_url = f"${API_URL}/reset-password?token={token}"
+    reset_url = f"{API_URL}/reset-password?token={token}"
     email_body = f"""
     Xin chào,
 
@@ -563,6 +563,7 @@ def send_reset_email(email, token):
 
     # Gửi email
     with smtplib.SMTP(Config.EMAIL_SERVER, Config.EMAIL_PORT) as server:
+        server.connect()  # Đảm bảo kết nối được thiết lập
         server.starttls()  # Bật mã hóa TLS
         server.login(Config.EMAIL_USERNAME, Config.EMAIL_PASSWORD)
         server.sendmail(Config.EMAIL_USERNAME, email, msg.as_string())
@@ -592,10 +593,10 @@ def reset_password_request():
     expires_at = datetime.now() + timedelta(minutes=15)
 
     # Lưu token vào bảng PASSWORD_RESET_TOKENS
-    cursor.execute("""
-        INSERT INTO password_reset_tokens (user_id, token, expires_at)
+    cursor.execute('''
+        INSERT INTO "PASSWORD_RESET_TOKENS" (user_id, token, expires_at)
         VALUES (%s, %s, %s)
-    """, (user_id, token, expires_at))
+    ''', (user_id, token, expires_at))
     conn.commit()
 
     # Gửi email chứa token
