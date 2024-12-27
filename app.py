@@ -7,12 +7,20 @@ from modules.bill import bill_bp
 from modules.category import category_bp  
 from modules.spendAlert import spend_alert_bp
 from modules.groupFund import group_fund_bp
+from modules.emailService import reset_password_bp, init_mail
+from modules.dashboard import dashboard_bp
 
 app = Flask(__name__)
+
 app.config['SECRET_KEY'] = Config.SECRET_KEY
+app.config['SECURITY_PASSWORD_SALT'] = Config.SECURITY_PASSWORD_SALT
+
 
 # Cấu hình CORS cho tất cả các route
 CORS(app)
+
+# Cấu hình email
+init_mail(app)
 
 # Đăng ký blueprint cho các route   
 app.register_blueprint(auth_bp)
@@ -20,6 +28,9 @@ app.register_blueprint(bill_bp)
 app.register_blueprint(category_bp) 
 app.register_blueprint(spend_alert_bp) 
 app.register_blueprint(group_fund_bp) 
+app.register_blueprint(reset_password_bp)
+app.register_blueprint(dashboard_bp)
+
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -530,3 +530,90 @@ def delete_bill(id=None):
         conn.close()
         return jsonify({"message": f"Lỗi khi xóa dữ liệu: {str(e)}"}), 500
 
+
+
+
+@bill_bp.route("/get-bill-report", methods=["GET"])
+def get_bill_report():
+    # Lấy tham số từ query string
+    month = request.args.get("month")
+    year = request.args.get("year")
+    user_id = request.args.get("user_id")
+    bill_type = request.args.get("type")  # Tham số type (THU hoặc CHI)
+
+    # Kết nối đến cơ sở dữ liệu
+    conn = connect_db()
+    cur = conn.cursor()
+
+    # Kiểm tra và thêm điều kiện theo tháng và năm nếu có
+    if not month or not year:
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Tham số month và year là bắt buộc"}), 400
+
+    try:
+        month = int(month)
+        year = int(year)
+    except ValueError:
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Tham số month và year phải là số nguyên"}), 400
+
+    if month < 1 or month > 12:
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Tháng không hợp lệ, phải trong khoảng từ 1 đến 12"}), 400
+
+    # Kiểm tra giá trị của type
+    if bill_type not in ["THU", "CHI"]:
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Tham số type phải là 'THU' hoặc 'CHI'"}), 400
+
+    # Xây dựng câu lệnh SQL để tính tổng chi tiêu hoặc thu nhập cho mỗi danh mục
+    query = """
+        SELECT c.category_name, SUM(b.amount) AS total_spent
+        FROM "BILL" b
+        JOIN "CATEGORY" c ON b.category_id = c.id
+        WHERE EXTRACT(MONTH FROM b.date) = %s 
+        AND EXTRACT(YEAR FROM b.date) = %s
+        AND b.type = %s
+        AND b.is_group_bill = false
+    """
+
+    params = [month, year, bill_type]
+
+    if user_id:
+        query += " AND b.user_id = %s"
+        params.append(user_id)
+
+    query += """
+        GROUP BY c.category_name
+        ORDER BY total_spent DESC
+    """
+
+    try:
+        # Thực thi câu lệnh SQL
+        cur.execute(query, params)
+        category_expenses = cur.fetchall()
+
+        # Chuyển đổi kết quả truy vấn thành danh sách từ điển
+        category_expenses_list = []
+        for expense in category_expenses:
+            category_expenses_list.append(
+                {
+                    "category_name": expense[0],
+                    "total_spent": expense[1],
+                }
+            )
+
+        cur.close()
+        conn.close()
+
+        return jsonify(category_expenses_list), 200
+
+    except Exception as e:
+        cur.close()
+        conn.close()
+        return jsonify({"message": f"Lỗi khi lấy dữ liệu: {str(e)}"}), 500
+
