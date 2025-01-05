@@ -369,3 +369,7 @@ def delete_category(category_id):
         cur.close()
         conn.close()
         return jsonify({"message": f"Lỗi khi xóa danh mục: {str(e)}"}), 500
+
+
+
+

@@ -617,3 +617,6 @@ def get_bill_report():
         conn.close()
         return jsonify({"message": f"Lỗi khi lấy dữ liệu: {str(e)}"}), 500
 
+
+
+

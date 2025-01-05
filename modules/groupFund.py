@@ -909,3 +909,8 @@ def delete_member():
     finally:
         cur.close()
         conn.close()
+
+
+
+
+

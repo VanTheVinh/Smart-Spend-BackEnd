@@ -705,3 +705,5 @@ def delete_user(user_id):
 
 
 # Hàm gửi email đặt lại mật khẩu
+
+
